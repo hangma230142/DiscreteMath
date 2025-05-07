@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Duck Greedy Tour</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            flex-direction: column;
+            position: relative; /* Đảm bảo các phần tử con có thể có z-index */
+        }
+        canvas {
+            background-image: url('map.png'); /* Đặt nền cho canvas */
+            background-size: contain; /* Căn chỉnh bản đồ vừa với canvas */
+            background-position: center; /* Đặt bản đồ ở giữa */
+            background-repeat: no-repeat;
+            margin-bottom: 20px; /* Cách nút và thời gian */
+            position: absolute; /* Đảm bảo canvas không ảnh hưởng đến các phần tử khác */
+            z-index: 0; /* Đặt canvas dưới cùng */
+        }
+        #startButton {
+            padding: 20px 100px;
+            font-size: 80px;
+            cursor: pointer;
+            background-color: #0077cc;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            transition: background-color 0.3s ease;
+            z-index: 1; /* Đặt nút Start lên trên canvas */
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        #startButton:hover {
+            background-color: #005fa3;
+        }
+        #timer {
+            font-size: 50px;
+            color: white;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 25px 80px;
+            border-radius: 5px;
+            text-align: center;
+            width: 90px;
+            z-index: 1; /* Đảm bảo timer không bị ẩn */
+            position: absolute;
+            top: 200px;
+            left: 50%;
+            transform: translate(-50%);
+        }
+        @media (max-width: 600px) {
+            canvas {
+                width: 100vw;
+                height: calc(100vw * 3 / 4);
+                max-height: 600px;
+            }
+            #startButton {
+                font-size: 14px;
+                padding: 8px 16px;
+            }
+            #timer {
+                font-size: 14px;
+                padding: 4px 8px;
+                width: 70px;
+            }
+        }
+    </style>
+</head>
+<body>
+<button id="startButton">Start</button>
+<div id="timer">Time: 0s</div>
+<canvas id="canvas" width="4000" height="3000"></canvas>
+
+<script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    // Tải hình ảnh của mẹ và con vịt
+    const duckMotherImg = new Image();
+    duckMotherImg.src = 'duckmother.png';
+    const babyDuckImg = new Image();
+    babyDuckImg.src = 'babyduck.png';
+
+    // Vị trí 7 hồ của vịt con, những vị trí này cố định
+    const babyDuckPositions = [
+        { x: 453, y: 312 },
+        { x: 3151, y: 331 },
+        { x: 3442, y: 1333 },
+        { x: 1503, y: 872 },
+        { x: 434, y: 1617 },
+        { x: 1349, y: 2447 },
+        { x: 2514, y: 1922 }
+    ];
+
+    // Vị trí bắt đầu của vịt mẹ - tại hồ đầu tiên
+    let mother = { x: babyDuckPositions[0].x, y: babyDuckPositions[0].y };
+
+    // Theo dõi thời gian trôi qua
+    let timeElapsed = 0;
+    let timerInterval = null;
+
+    // Biến quản lý đường đi
+    let path = [];
+    let visited = new Array(babyDuckPositions.length).fill(false);
+
+    let progress = 0;
+    let currentSegment = 0;
+    let clearPath = [];
+    let moving = false;
+
+    // Kích thước của vịt con
+    const babyDuckSize = { width: 650, height: 450 };
+    // Vịt mẹ lớn hơn 10% so với vịt con
+    const motherDuckSize = {
+        width: babyDuckSize.width * 1.1,
+        height: babyDuckSize.height * 1.1
+    };
+
+    // Tốc độ di chuyển của vịt mẹ (pixels/frame)
+    const speed = 4;
+
+    // Hàm giải quyết bài toán TSP tham lam (greedy) để tìm đường đi cho vịt mẹ
+    function greedyTSP(startIdx) {
+        let tour = [startIdx];
+        visited = new Array(babyDuckPositions.length).fill(false);
+        visited[startIdx] = true;
+        let current = startIdx;
+        for (let i = 1; i < babyDuckPositions.length; i++) {
+            let minDist = Infinity;
+            let next = -1;
+            for (let j = 0; j < babyDuckPositions.length; j++) {
+                if (!visited[j]) {
+                    let dist = Math.hypot(babyDuckPositions[current].x - babyDuckPositions[j].x,
+                        babyDuckPositions[current].y - babyDuckPositions[j].y);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        next = j;
+                    }
+                }
+            }
+            tour.push(next);
+            visited[next] = true;
+            current = next;
+        }
+        return tour;
+    }
+
+    // Xây dựng đường đi dựa trên tour đã tính toán
+    function buildPath(tour) {
+        let segments = [];
+        for (let i = 0; i < tour.length -1; i++) {
+            segments.push([babyDuckPositions[tour[i]], babyDuckPositions[tour[i+1]]]);
+        }
+        return segments;
+    }
+
+    // Tính toán tour và path ngay khi bắt đầu
+    const tour = greedyTSP(0);
+    path = buildPath(tour);
+
+    // Hàm vẽ hình ảnh lên canvas
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Vẽ tất cả các đoạn đường đi
+        path.forEach((segment, idx) => {
+            ctx.beginPath();
+            ctx.moveTo(segment[0].x, segment[0].y);
+            ctx.lineTo(segment[1].x, segment[1].y);
+            ctx.strokeStyle = clearPath.includes(idx) ? 'yellow' : 'rgba(255, 255, 0, 0.2)';
+            ctx.lineWidth = 5;
+            ctx.stroke();
+        });
+
+        // Vẽ vịt con cố định ở 7 vị trí
+        babyDuckPositions.forEach(pos => {
+            ctx.drawImage(babyDuckImg,
+                pos.x - babyDuckSize.width / 2,
+                pos.y - babyDuckSize.height / 2,
+                babyDuckSize.width,
+                babyDuckSize.height);
+        });
+
+        // Vẽ vịt mẹ đang di chuyển, to hơn vịt con 10%
+        ctx.drawImage(duckMotherImg,
+            mother.x - motherDuckSize.width / 2,
+            mother.y - motherDuckSize.height / 2,
+            motherDuckSize.width,
+            motherDuckSize.height);
+    }
+
+    // Hàm hoạt động từng bước để di chuyển vịt mẹ
+    function animateStep() {
+        if (!moving || currentSegment >= path.length) return;
+
+        const [from, to] = path[currentSegment];
+
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const dist = Math.hypot(dx, dy);
+
+        const steps = dist / speed;
+        const t = progress / steps;
+
+        if (t >= 1) {
+            mother.x = to.x;
+            mother.y = to.y;
+
+            clearPath.push(currentSegment);
+            currentSegment++;
+            progress = 0;
+        } else {
+            mother.x = from.x + dx * t;
+            mother.y = from.y + dy * t;
+            progress++;
+        }
+
+        draw();
+        requestAnimationFrame(animateStep);
+    }
+
+    // Lắng nghe sự kiện khi bấm nút "Start"
+    document.getElementById('startButton').addEventListener('click', () => {
+        if (moving) return;
+        moving = true;
+        timeElapsed = 0;
+        document.getElementById('timer').innerText = 'Time: 0s';
+
+        timerInterval = setInterval(() => {
+            timeElapsed++;
+            document.getElementById('timer').innerText = `Time: ${timeElapsed}s`;
+            if (currentSegment >= path.length) {
+                clearInterval(timerInterval);
+            }
+        }, 1000);
+
+        animateStep();
+    });
+
+    // Kiểm tra xem hình ảnh đã được tải xong chưa
+    let loadedCount = 0;
+    function checkLoad() {
+        loadedCount++;
+        if (loadedCount === 2) {
+            draw(); // Vẽ lại khi cả hai hình ảnh đã được tải
+        }
+    }
+    duckMotherImg.onload = checkLoad;
+    babyDuckImg.onload = checkLoad;
+</script>
+</body>
+</html>
+
+
+
