@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <title>Duck Greedy Tour</title>
+    <title>Duck MST-2 Approximation</title>
     <style>
         body {
             margin: 0;
@@ -13,252 +13,262 @@
             align-items: center;
             height: 100vh;
             flex-direction: column;
-            position: relative; /* Đảm bảo các phần tử con có thể có z-index */
+            position: relative;
         }
         canvas {
-            background-image: url('map.png'); /* Đặt nền cho canvas */
-            background-size: contain; /* Căn chỉnh bản đồ vừa với canvas */
-            background-position: center; /* Đặt bản đồ ở giữa */
-            background-repeat: no-repeat;
-            margin-bottom: 20px; /* Cách nút và thời gian */
-            position: absolute; /* Đảm bảo canvas không ảnh hưởng đến các phần tử khác */
-            z-index: 0; /* Đặt canvas dưới cùng */
+            background-color: #ffffff;
+            border: 1px solid #000;
+            position: absolute;
+            z-index: 0;
         }
         #startButton {
-            padding: 20px 100px;
-            font-size: 80px;
+            padding: 30px 100px;
+            font-size: 48px;
             cursor: pointer;
             background-color: #0077cc;
             color: white;
             border: none;
             border-radius: 6px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-            transition: background-color 0.3s ease;
-            z-index: 1; /* Đặt nút Start lên trên canvas */
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
             position: absolute;
-            top: 20px;
+            top: 50px;
             left: 50%;
             transform: translateX(-50%);
         }
-        #startButton:hover {
-            background-color: #005fa3;
-        }
-        #timer {
+        #info {
             font-size: 50px;
             color: white;
-            background: rgba(0, 0, 0, 0.5);
-            padding: 25px 80px;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 40px 80px;
             border-radius: 5px;
-            text-align: center;
-            width: 90px;
-            z-index: 1; /* Đảm bảo timer không bị ẩn */
             position: absolute;
-            top: 200px;
-            left: 50%;
-            transform: translate(-50%);
-        }
-        @media (max-width: 600px) {
-            canvas {
-                width: 100vw;
-                height: calc(100vw * 3 / 4);
-                max-height: 600px;
-            }
-            #startButton {
-                font-size: 14px;
-                padding: 8px 16px;
-            }
-            #timer {
-                font-size: 14px;
-                padding: 4px 8px;
-                width: 70px;
-            }
+            top: 10px;
+            left: 10px;
+            transform: none;
+            white-space: pre-line;
         }
     </style>
 </head>
 <body>
 <button id="startButton">Start</button>
-<div id="timer">Time: 0s</div>
-<canvas id="canvas" width="4000" height="3000"></canvas>
+<div id="info">Time: 0s</div>
+<canvas id="canvas" width="4400" height="2400"></canvas>
 
 <script>
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
 
-    // Tải hình ảnh của mẹ và con vịt
     const duckMotherImg = new Image();
     duckMotherImg.src = 'duckmother.png';
+
     const babyDuckImg = new Image();
     babyDuckImg.src = 'babyduck.png';
 
-    // Vị trí 7 hồ của vịt con, những vị trí này cố định
-    const babyDuckPositions = [
-        { x: 453, y: 312 },
-        { x: 3151, y: 331 },
-        { x: 3442, y: 1333 },
-        { x: 1503, y: 872 },
-        { x: 434, y: 1617 },
-        { x: 1349, y: 2447 },
-        { x: 2514, y: 1922 }
-    ];
+    const NUM_DUCKS = 10;
+    const ducks = [];
+    let tour = [];
+    let currentIdx = 0;
+    let animating = false;
+    let timerInterval;
+    let time = 0;
+    let duck = { x: 0, y: 0 };
+    const footprints = [];
+    const traversedEdges = [];
+    let totalDistance = 0;
 
-    // Vị trí bắt đầu của vịt mẹ - tại hồ đầu tiên
-    let mother = { x: babyDuckPositions[0].x, y: babyDuckPositions[0].y };
+    const infoDiv = document.getElementById('info');
 
-    // Theo dõi thời gian trôi qua
-    let timeElapsed = 0;
-    let timerInterval = null;
+    function distance(a, b) {
+        return Math.hypot(a.x - b.x, a.y - b.y);
+    }
 
-    // Biến quản lý đường đi
-    let path = [];
-    let visited = new Array(babyDuckPositions.length).fill(false);
+    function generateRandomDucks() {
+        ducks.length = 0;
+        const margin = 200;
+        const minDist = 200;
 
-    let progress = 0;
-    let currentSegment = 0;
-    let clearPath = [];
-    let moving = false;
+        while (ducks.length < NUM_DUCKS) {
+            const x = Math.random() * (canvas.width - 2 * margin) + margin;
+            const y = Math.random() * (canvas.height - 2 * margin) + margin;
 
-    // Kích thước của vịt con
-    const babyDuckSize = { width: 650, height: 450 };
-    // Vịt mẹ lớn hơn 10% so với vịt con
-    const motherDuckSize = {
-        width: babyDuckSize.width * 1.1,
-        height: babyDuckSize.height * 1.1
-    };
+            const newDuck = { x, y };
+            let tooClose = ducks.some(d => distance(d, newDuck) < minDist);
+            if (!tooClose) ducks.push(newDuck);
+        }
+    }
 
-    // Tốc độ di chuyển của vịt mẹ (pixels/frame)
-    const speed = 4;
+    function drawGrid() {
+        const gridSize = 50;
+        ctx.strokeStyle = '#ddd';
+        for (let x = 0; x <= canvas.width; x += gridSize) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, canvas.height);
+            ctx.stroke();
+        }
+        for (let y = 0; y <= canvas.height; y += gridSize) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(canvas.width, y);
+            ctx.stroke();
+        }
+    }
 
-    // Hàm giải quyết bài toán TSP tham lam (greedy) để tìm đường đi cho vịt mẹ
-    function greedyTSP(startIdx) {
-        let tour = [startIdx];
-        visited = new Array(babyDuckPositions.length).fill(false);
-        visited[startIdx] = true;
-        let current = startIdx;
-        for (let i = 1; i < babyDuckPositions.length; i++) {
-            let minDist = Infinity;
-            let next = -1;
-            for (let j = 0; j < babyDuckPositions.length; j++) {
-                if (!visited[j]) {
-                    let dist = Math.hypot(babyDuckPositions[current].x - babyDuckPositions[j].x,
-                        babyDuckPositions[current].y - babyDuckPositions[j].y);
-                    if (dist < minDist) {
-                        minDist = dist;
-                        next = j;
-                    }
+    function drawDucks() {
+        ducks.forEach((duck, i) => {
+            ctx.drawImage(babyDuckImg, duck.x - 80, duck.y - 80, 100, 100);
+        });
+    }
+
+    function drawMotherDuck() {
+        ctx.drawImage(duckMotherImg, duck.x - 160, duck.y - 160, 200, 200);
+    }
+
+    function drawFootprints() {
+        ctx.fillStyle = 'gold';
+        footprints.forEach(footprint => {
+            ctx.beginPath();
+            ctx.ellipse(footprint.x - 8, footprint.y, 5, 10, Math.PI / 6, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(footprint.x + 8, footprint.y, 5, 10, -Math.PI / 6, 0, 2 * Math.PI);
+            ctx.fill();
+        });
+    }
+
+    function drawTraversedEdges() {
+        ctx.font = 'bold 50px Arial';
+        ctx.fillStyle = 'red';
+        traversedEdges.forEach(edge => {
+            const { from, to, weight } = edge;
+            const midX = (from.x + to.x) / 2;
+            const midY = (from.y + to.y) / 2;
+            ctx.fillText(weight.toFixed(1), midX + 10, midY - 10);
+        });
+    }
+
+    function mstApproximation() {
+        const edges = [];
+        const visited = Array(NUM_DUCKS).fill(false);
+
+        for (let i = 0; i < ducks.length; i++) {
+            for (let j = i + 1; j < ducks.length; j++) {
+                const weight = distance(ducks[i], ducks[j]);
+                edges.push({ u: i, v: j, weight });
+            }
+        }
+
+        edges.sort((a, b) => a.weight - b.weight);
+        const mst = [];
+        visited[0] = true;
+        while (mst.length < NUM_DUCKS - 1) {
+            for (const edge of edges) {
+                if (visited[edge.u] && !visited[edge.v]) {
+                    mst.push(edge);
+                    visited[edge.v] = true;
+                    break;
+                }
+                if (visited[edge.v] && !visited[edge.u]) {
+                    mst.push(edge);
+                    visited[edge.u] = true;
+                    break;
                 }
             }
-            tour.push(next);
-            visited[next] = true;
-            current = next;
         }
-        return tour;
+
+        const tour = [];
+        function dfs(node, parent) {
+            tour.push(node);
+            mst.forEach(edge => {
+                if (edge.u === node && edge.v !== parent) dfs(edge.v, node);
+                if (edge.v === node && edge.u !== parent) dfs(edge.u, node);
+            });
+        }
+        dfs(0, -1);
+        return tour.concat(0);
     }
 
-    // Xây dựng đường đi dựa trên tour đã tính toán
-    function buildPath(tour) {
-        let segments = [];
-        for (let i = 0; i < tour.length -1; i++) {
-            segments.push([babyDuckPositions[tour[i]], babyDuckPositions[tour[i+1]]]);
-        }
-        return segments;
-    }
+    function animate() {
+        if (!animating) return;
 
-    // Tính toán tour và path ngay khi bắt đầu
-    const tour = greedyTSP(0);
-    path = buildPath(tour);
-
-    // Hàm vẽ hình ảnh lên canvas
-    function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawGrid();
+        drawDucks();
+        drawFootprints();
+        drawTraversedEdges();
+        drawMotherDuck();
 
-        // Vẽ tất cả các đoạn đường đi
-        path.forEach((segment, idx) => {
-            ctx.beginPath();
-            ctx.moveTo(segment[0].x, segment[0].y);
-            ctx.lineTo(segment[1].x, segment[1].y);
-            ctx.strokeStyle = clearPath.includes(idx) ? 'yellow' : 'rgba(255, 255, 0, 0.2)';
-            ctx.lineWidth = 5;
-            ctx.stroke();
-        });
-
-        // Vẽ vịt con cố định ở 7 vị trí
-        babyDuckPositions.forEach(pos => {
-            ctx.drawImage(babyDuckImg,
-                pos.x - babyDuckSize.width / 2,
-                pos.y - babyDuckSize.height / 2,
-                babyDuckSize.width,
-                babyDuckSize.height);
-        });
-
-        // Vẽ vịt mẹ đang di chuyển, to hơn vịt con 10%
-        ctx.drawImage(duckMotherImg,
-            mother.x - motherDuckSize.width / 2,
-            mother.y - motherDuckSize.height / 2,
-            motherDuckSize.width,
-            motherDuckSize.height);
-    }
-
-    // Hàm hoạt động từng bước để di chuyển vịt mẹ
-    function animateStep() {
-        if (!moving || currentSegment >= path.length) return;
-
-        const [from, to] = path[currentSegment];
-
-        const dx = to.x - from.x;
-        const dy = to.y - from.y;
+        const target = ducks[tour[currentIdx]];
+        const dx = target.x - duck.x;
+        const dy = target.y - duck.y;
         const dist = Math.hypot(dx, dy);
+        const speed = 6;
 
-        const steps = dist / speed;
-        const t = progress / steps;
+        if (dist > speed) {
+            duck.x += dx / dist * speed;
+            duck.y += dy / dist * speed;
 
-        if (t >= 1) {
-            mother.x = to.x;
-            mother.y = to.y;
-
-            clearPath.push(currentSegment);
-            currentSegment++;
-            progress = 0;
+            if (
+                footprints.length === 0 ||
+                Math.hypot(duck.x - footprints[footprints.length - 1].x, duck.y - footprints[footprints.length - 1].y) > 20
+            ) {
+                footprints.push({ x: duck.x, y: duck.y });
+            }
         } else {
-            mother.x = from.x + dx * t;
-            mother.y = from.y + dy * t;
-            progress++;
+            if (currentIdx < tour.length - 1) {
+                const from = ducks[tour[currentIdx]];
+                const to = ducks[tour[currentIdx + 1]];
+                const weight = distance(from, to);
+                traversedEdges.push({ from, to, weight });
+                totalDistance += weight;
+            }
+
+            currentIdx++;
+            if (currentIdx >= tour.length) {
+                animating = false;
+                clearInterval(timerInterval);
+                infoDiv.textContent = `Time: ${time}s\nTotal Distance: ${totalDistance.toFixed(1)}`;
+                return;
+            }
         }
 
-        draw();
-        requestAnimationFrame(animateStep);
+        requestAnimationFrame(animate);
     }
 
-    // Lắng nghe sự kiện khi bấm nút "Start"
     document.getElementById('startButton').addEventListener('click', () => {
-        if (moving) return;
-        moving = true;
-        timeElapsed = 0;
-        document.getElementById('timer').innerText = 'Time: 0s';
+        if (animating) return;
 
+        animating = true;
+        generateRandomDucks();
+        tour = mstApproximation();
+        currentIdx = 0;
+        duck = { ...ducks[tour[0]] };
+        time = 0;
+        totalDistance = 0;
+        footprints.length = 0;
+        traversedEdges.length = 0;
+
+        infoDiv.textContent = 'Time: 0s';
+        clearInterval(timerInterval);
         timerInterval = setInterval(() => {
-            timeElapsed++;
-            document.getElementById('timer').innerText = `Time: ${timeElapsed}s`;
-            if (currentSegment >= path.length) {
-                clearInterval(timerInterval);
-            }
+            time++;
+            infoDiv.textContent = `Time: ${time}s`;
         }, 1000);
 
-        animateStep();
+        animate();
     });
 
-    // Kiểm tra xem hình ảnh đã được tải xong chưa
     let loadedCount = 0;
-    function checkLoad() {
-        loadedCount++;
-        if (loadedCount === 2) {
-            draw(); // Vẽ lại khi cả hai hình ảnh đã được tải
-        }
-    }
-    duckMotherImg.onload = checkLoad;
-    babyDuckImg.onload = checkLoad;
+    [duckMotherImg, babyDuckImg].forEach(img => {
+        img.onload = () => {
+            loadedCount++;
+            if (loadedCount === 2) {
+                drawGrid();
+                generateRandomDucks();
+                drawDucks();
+            }
+        };
+    });
 </script>
 </body>
 </html>
-
-
-
