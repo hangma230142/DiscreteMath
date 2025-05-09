@@ -77,11 +77,14 @@
     let totalDistance = 0;
 
     const infoDiv = document.getElementById('info');
+    const weights = [];
 
+    // Function to calculate the distance between two points
     function distance(a, b) {
         return Math.hypot(a.x - b.x, a.y - b.y);
     }
 
+    // Function to generate random ducks in the canvas with a minimum distance between them
     function generateRandomDucks() {
         ducks.length = 0;
         const margin = 200;
@@ -97,6 +100,7 @@
         }
     }
 
+    // Function to draw a grid on the canvas
     function drawGrid() {
         const gridSize = 50;
         ctx.strokeStyle = '#ddd';
@@ -114,16 +118,19 @@
         }
     }
 
+    // Function to draw ducks on the canvas
     function drawDucks() {
         ducks.forEach((duck, i) => {
             ctx.drawImage(babyDuckImg, duck.x - 80, duck.y - 80, 100, 100);
         });
     }
 
+    // Function to draw the mother duck
     function drawMotherDuck() {
         ctx.drawImage(duckMotherImg, duck.x - 160, duck.y - 160, 200, 200);
     }
 
+    // Function to draw footprints of the mother duck
     function drawFootprints() {
         ctx.fillStyle = 'gold';
         footprints.forEach(footprint => {
@@ -136,21 +143,48 @@
         });
     }
 
-    function drawTraversedEdges() {
-        ctx.font = 'bold 50px Arial';
-        ctx.fillStyle = 'red';
-        traversedEdges.forEach(edge => {
-            const { from, to, weight } = edge;
-            const midX = (from.x + to.x) / 2;
-            const midY = (from.y + to.y) / 2;
-            ctx.fillText(weight.toFixed(1), midX + 10, midY - 10);
+    // Function to draw the weights of edges between ducks
+    function drawWeights() {
+        ctx.font = 'bold 30px Arial';
+        ctx.fillStyle = 'black';
+        weights.forEach(({ x, y, weight }) => {
+            ctx.fillText(weight.toFixed(1), x + 10, y - 10);
         });
     }
 
+    // Function to draw weights from the current duck
+    function drawWeightsFromCurrent() {
+        if (currentIdx >= tour.length) return;
+
+        const currentDuckIdx = tour[currentIdx];
+        const currentDuck = ducks[currentDuckIdx];
+
+        ducks.forEach((d, i) => {
+            if (i === currentDuckIdx) return;
+            ctx.strokeStyle = '#00aa00';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(currentDuck.x, currentDuck.y);
+            ctx.lineTo(d.x, d.y);
+            ctx.stroke();
+
+            // Draw weight of the edge
+            const w = distance(currentDuck, d);
+            const midX = (currentDuck.x + d.x) / 2;
+            const midY = (currentDuck.y + d.y) / 2;
+
+            ctx.font = 'bold 36px Arial';
+            ctx.fillStyle = '#007700';
+            ctx.fillText(w.toFixed(1), midX + 10, midY - 10);
+        });
+    }
+
+    // Function to compute the Minimum Spanning Tree (MST) approximation
     function mstApproximation() {
         const edges = [];
         const visited = Array(NUM_DUCKS).fill(false);
 
+        // Create edges with weights
         for (let i = 0; i < ducks.length; i++) {
             for (let j = i + 1; j < ducks.length; j++) {
                 const weight = distance(ducks[i], ducks[j]);
@@ -158,6 +192,7 @@
             }
         }
 
+        // Sort edges by weight
         edges.sort((a, b) => a.weight - b.weight);
         const mst = [];
         visited[0] = true;
@@ -188,6 +223,7 @@
         return tour.concat(0);
     }
 
+    // Function to animate the movement of the mother duck and its footprints
     function animate() {
         if (!animating) return;
 
@@ -195,24 +231,44 @@
         drawGrid();
         drawDucks();
         drawFootprints();
-        drawTraversedEdges();
         drawMotherDuck();
+        drawWeights();
 
-        const target = ducks[tour[currentIdx]];
+        let target = ducks[tour[currentIdx]];
         const dx = target.x - duck.x;
         const dy = target.y - duck.y;
         const dist = Math.hypot(dx, dy);
-        const speed = 6;
+        const speed = 3;
+
+        // Check if the mother duck has already moved along this path
+        let movedToNewPosition = false;
 
         if (dist > speed) {
+            // Move the mother duck
             duck.x += dx / dist * speed;
             duck.y += dy / dist * speed;
 
-            if (
-                footprints.length === 0 ||
-                Math.hypot(duck.x - footprints[footprints.length - 1].x, duck.y - footprints[footprints.length - 1].y) > 20
-            ) {
-                footprints.push({ x: duck.x, y: duck.y });
+            // Check if the mother duck moves along an already traversed path
+            traversedEdges.forEach(edge => {
+                const edgeDist = distance(edge.from, edge.to);
+                const distToEdge = Math.hypot(duck.x - edge.from.x, duck.y - edge.from.y) +
+                    Math.hypot(duck.x - edge.to.x, duck.y - edge.to.y);
+
+                // If the total distance from the mother duck to the edge is less than the edge's length
+                if (distToEdge <= edgeDist + 20) {
+                    movedToNewPosition = false; // Path has already been traversed
+                }
+            });
+
+            // If the mother duck has not moved along an already traversed path, continue moving
+            if (!movedToNewPosition) {
+                if (
+                    footprints.length === 0 ||
+                    Math.hypot(duck.x - footprints[footprints.length - 1].x, duck.y - footprints[footprints.length - 1].y) > 20
+                ) {
+                    footprints.push({ x: duck.x, y: duck.y });
+                }
+                movedToNewPosition = true;
             }
         } else {
             if (currentIdx < tour.length - 1) {
@@ -224,7 +280,17 @@
             }
 
             currentIdx++;
-            if (currentIdx >= tour.length) {
+            if (currentIdx < tour.length) {
+                const currentDuck = ducks[tour[currentIdx]];
+                const nextWeights = ducks.map((d, idx) => {
+                    if (idx !== tour[currentIdx]) {
+                        return { x: d.x, y: d.y, weight: distance(currentDuck, d) };
+                    }
+                    return null;
+                }).filter(w => w !== null);
+                weights.length = 0;
+                weights.push(...nextWeights);
+            } else {
                 animating = false;
                 clearInterval(timerInterval);
                 infoDiv.textContent = `Time: ${time}s\nTotal Distance: ${totalDistance.toFixed(1)}`;
@@ -232,42 +298,28 @@
             }
         }
 
+        drawWeightsFromCurrent(); // Call function to draw rays and weights
         requestAnimationFrame(animate);
     }
 
+    // Start button handler to initialize ducks and begin animation
     document.getElementById('startButton').addEventListener('click', () => {
-        if (animating) return;
-
-        animating = true;
         generateRandomDucks();
         tour = mstApproximation();
-        currentIdx = 0;
-        duck = { ...ducks[tour[0]] };
-        time = 0;
-        totalDistance = 0;
+        duck = { x: ducks[tour[0]].x, y: ducks[tour[0]].y };
         footprints.length = 0;
         traversedEdges.length = 0;
+        currentIdx = 0;
+        totalDistance = 0;
+        animating = true;
+        time = 0;
 
-        infoDiv.textContent = 'Time: 0s';
-        clearInterval(timerInterval);
         timerInterval = setInterval(() => {
             time++;
             infoDiv.textContent = `Time: ${time}s`;
         }, 1000);
 
         animate();
-    });
-
-    let loadedCount = 0;
-    [duckMotherImg, babyDuckImg].forEach(img => {
-        img.onload = () => {
-            loadedCount++;
-            if (loadedCount === 2) {
-                drawGrid();
-                generateRandomDucks();
-                drawDucks();
-            }
-        };
     });
 </script>
 </body>
